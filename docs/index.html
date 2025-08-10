@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Clustering with K-Means</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.18.0/plotly.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        input, select, button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .plot-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        .description {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Vehicle Clustering Analysis</h1>
+        
+        <div class="description">
+            <strong>K-Means Clustering:</strong> This unsupervised learning algorithm groups vehicles into clusters based on their weight, engine size, and horsepower without any predefined labels. Each cluster represents vehicles with similar characteristics.
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="clusters">Number of Clusters:</label>
+                <select id="clusters">
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="dataSize">Dataset Size:</label>
+                <select id="dataSize">
+                    <option value="100">100</option>
+                    <option value="300" selected>300</option>
+                    <option value="500">500</option>
+                    <option value="1000">1000</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="xAxis">X-Axis:</label>
+                <select id="xAxis">
+                    <option value="Weight" selected>Weight</option>
+                    <option value="EngineSize">Engine Size</option>
+                    <option value="Horsepower">Horsepower</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="yAxis">Y-Axis:</label>
+                <select id="yAxis">
+                    <option value="Weight">Weight</option>
+                    <option value="EngineSize">Engine Size</option>
+                    <option value="Horsepower" selected>Horsepower</option>
+                </select>
+            </div>
+            
+            <button onclick="generateNewData()">🔄 Generate New Data</button>
+            <button onclick="runClustering()">🎯 Run Clustering</button>
+        </div>
+        
+        <div class="plot-container">
+            <div id="scatter-plot"></div>
+        </div>
+        
+        <div class="plot-container">
+            <div id="cluster-centers"></div>
+        </div>
+        
+        <div class="stats" id="stats"></div>
+    </div>
+
+    <script>
+        let vehicleData = [];
+        let clusters = [];
+        let centroids = [];
+        
+        // Generate random seed for reproducible results
+        function seededRandom(seed) {
+            let x = Math.sin(seed++) * 10000;
+            return x - Math.floor(x);
+        }
+        
+        // Generate synthetic vehicle data
+        function generateVehicleData(size, seed = 42) {
+            const data = [];
+            for (let i = 0; i < size; i++) {
+                data.push({
+                    Weight: Math.floor(seededRandom(seed + i) * 2000) + 1000,
+                    EngineSize: seededRandom(seed + i + 1000) * 3.0 + 1.0,
+                    Horsepower: Math.floor(seededRandom(seed + i + 2000) * 250) + 50
+                });
+            }
+            return data;
+        }
+        
+        // Simple K-means implementation
+        function kMeans(data, k, features) {
+            const points = data.map(d => features.map(f => d[f]));
+            
+            // Initialize centroids randomly
+            let centroids = [];
+            for (let i = 0; i < k; i++) {
+                centroids.push(features.map(() => Math.random()));
+            }
+            
+            let clusters = new Array(data.length);
+            let converged = false;
+            let iterations = 0;
+            
+            while (!converged && iterations < 100) {
+                // Assign points to nearest centroid
+                for (let i = 0; i < points.length; i++) {
+                    let minDist = Infinity;
+                    let cluster = 0;
+                    
+                    for (let j = 0; j < centroids.length; j++) {
+                        let dist = 0;
+                        for (let k = 0; k < features.length; k++) {
+                            const normalized_point = (points[i][k] - getMinValue(data, features[k])) / 
+                                                   (getMaxValue(data, features[k]) - getMinValue(data, features[k]));
+                            const normalized_centroid = centroids[j][k];
+                            dist += Math.pow(normalized_point - normalized_centroid, 2);
+                        }
+                        
+                        if (dist < minDist) {
+                            minDist = dist;
+                            cluster = j;
+                        }
+                    }
+                    clusters[i] = cluster;
+                }
+                
+                // Update centroids
+                const newCentroids = [];
+                for (let i = 0; i < k; i++) {
+                    const clusterPoints = points.filter((_, idx) => clusters[idx] === i);
+                    if (clusterPoints.length > 0) {
+                        const centroid = features.map((_, featureIdx) => {
+                            const sum = clusterPoints.reduce((s, point) => {
+                                const normalized = (point[featureIdx] - getMinValue(data, features[featureIdx])) / 
+                                                 (getMaxValue(data, features[featureIdx]) - getMinValue(data, features[featureIdx]));
+                                return s + normalized;
+                            }, 0);
+                            return sum / clusterPoints.length;
+                        });
+                        newCentroids.push(centroid);
+                    } else {
+                        newCentroids.push(centroids[i]);
+                    }
+                }
+                
+                // Check convergence
+                converged = true;
+                for (let i = 0; i < centroids.length; i++) {
+                    for (let j = 0; j < features.length; j++) {
+                        if (Math.abs(centroids[i][j] - newCentroids[i][j]) > 0.001) {
+                            converged = false;
+                            break;
+                        }
+                    }
+                    if (!converged) break;
+                }
+                
+                centroids = newCentroids;
+                iterations++;
+            }
+            
+            // Denormalize centroids for display
+            const denormalizedCentroids = centroids.map(centroid => 
+                features.map((feature, idx) => {
+                    const min = getMinValue(data, feature);
+                    const max = getMaxValue(data, feature);
+                    return centroid[idx] * (max - min) + min;
+                })
+            );
+            
+            return { clusters, centroids: denormalizedCentroids };
+        }
+        
+        function getMinValue(data, feature) {
+            return Math.min(...data.map(d => d[feature]));
+        }
+        
+        function getMaxValue(data, feature) {
+            return Math.max(...data.map(d => d[feature]));
+        }
+        
+        function plotScatter() {
+            const xAxis = document.getElementById('xAxis').value;
+            const yAxis = document.getElementById('yAxis').value;
+            
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57'];
+            const traces = [];
+            
+            const numClusters = Math.max(...clusters) + 1;
+            
+            for (let i = 0; i < numClusters; i++) {
+                const clusterData = vehicleData.filter((_, idx) => clusters[idx] === i);
+                
+                traces.push({
+                    x: clusterData.map(d => d[xAxis]),
+                    y: clusterData.map(d => d[yAxis]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Cluster ${i + 1}`,
+                    marker: {
+                        color: colors[i],
+                        size: 8,
+                        opacity: 0.7
+                    }
+                });
+            }
+            
+            // Add centroids
+            if (centroids.length > 0) {
+                const features = ['Weight', 'EngineSize', 'Horsepower'];
+                const xIdx = features.indexOf(xAxis);
+                const yIdx = features.indexOf(yAxis);
+                
+                traces.push({
+                    x: centroids.map(c => c[xIdx]),
+                    y: centroids.map(c => c[yIdx]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'Centroids',
+                    marker: {
+                        color: 'black',
+                        size: 15,
+                        symbol: 'x',
+                        line: { width: 3 }
+                    }
+                });
+            }
+            
+            const layout = {
+                title: `Vehicle Clusters: ${xAxis} vs ${yAxis}`,
+                xaxis: { title: xAxis },
+                yaxis: { title: yAxis },
+                showlegend: true,
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            };
+            
+            Plotly.newPlot('scatter-plot', traces, layout);
+        }
+        
+        function plotClusterCenters() {
+            if (centroids.length === 0) return;
+            
+            const features = ['Weight', 'EngineSize', 'Horsepower'];
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57'];
+            
+            const traces = features.map((feature, featureIdx) => ({
+                x: centroids.map((_, i) => `Cluster ${i + 1}`),
+                y: centroids.map(centroid => centroid[featureIdx]),
+                name: feature,
+                type: 'bar',
+                marker: { color: colors[featureIdx] }
+            }));
+            
+            const layout = {
+                title: 'Cluster Centers by Feature',
+                xaxis: { title: 'Clusters' },
+                yaxis: { title: 'Feature Values' },
+                barmode: 'group',
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            };
+            
+            Plotly.newPlot('cluster-centers', traces, layout);
+        }
+        
+        function updateStats() {
+            const numClusters = Math.max(...clusters) + 1;
+            const statsDiv = document.getElementById('stats');
+            
+            let statsHTML = '';
+            
+            for (let i = 0; i < numClusters; i++) {
+                const clusterData = vehicleData.filter((_, idx) => clusters[idx] === i);
+                const size = clusterData.length;
+                const avgWeight = (clusterData.reduce((s, d) => s + d.Weight, 0) / size).toFixed(0);
+                const avgEngine = (clusterData.reduce((s, d) => s + d.EngineSize, 0) / size).toFixed(1);
+                const avgHP = (clusterData.reduce((s, d) => s + d.Horsepower, 0) / size).toFixed(0);
+                
+                statsHTML += `
+                    <div class="stat-card">
+                        <h3>Cluster ${i + 1}</h3>
+                        <div class="stat-value">${size}</div>
+                        <div>Vehicles</div>
+                        <br>
+                        <div><strong>Avg Weight:</strong> ${avgWeight} lbs</div>
+                        <div><strong>Avg Engine:</strong> ${avgEngine}L</div>
+                        <div><strong>Avg HP:</strong> ${avgHP}</div>
+                    </div>
+                `;
+            }
+            
+            statsDiv.innerHTML = statsHTML;
+        }
+        
+        function generateNewData() {
+            const size = parseInt(document.getElementById('dataSize').value);
+            vehicleData = generateVehicleData(size, Math.random() * 1000);
+            runClustering();
+        }
+        
+        function runClustering() {
+            const k = parseInt(document.getElementById('clusters').value);
+            const features = ['Weight', 'EngineSize', 'Horsepower'];
+            
+            const result = kMeans(vehicleData, k, features);
+            clusters = result.clusters;
+            centroids = result.centroids;
+            
+            plotScatter();
+            plotClusterCenters();
+            updateStats();
+        }
+        
+        // Initialize
+        generateNewData();
+        
+        // Add event listeners
+        document.getElementById('clusters').addEventListener('change', runClustering);
+        document.getElementById('xAxis').addEventListener('change', plotScatter);
+        document.getElementById('yAxis').addEventListener('change', plotScatter);
+    </script>
+</body>
+</html>
